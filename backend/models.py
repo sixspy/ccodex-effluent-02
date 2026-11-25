@@ -1,7 +1,7 @@
 """Pydantic 入参模型。"""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PlantIn(BaseModel):
@@ -47,8 +47,20 @@ class ExceedCloseIn(BaseModel):
 
 
 class ReleaseIn(BaseModel):
+    # effluent-02：保留额外字段，任何 force/override/绕闸企图都要被识别为偏航。
+    model_config = ConfigDict(extra="allow")
+
     sample_id: int
     officer: str = "值班员"
+    force: bool = False
+    override: bool = False
+    bypass_exceed: bool = False
+
+
+class ReleaseIntentIn(BaseModel):
+    sample_id: int
+    officer: str = "值班员"
+    note: str = ""
 
 
 class SealIn(BaseModel):

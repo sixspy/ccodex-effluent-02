@@ -36,7 +36,12 @@ def _next_sample_code(conn, outfall_id: int) -> str:
 def list_samples(authorization: AuthHeader = None, status: str | None = None):
     require_user(authorization)
     with connect() as conn:
-        q = """SELECT s.*, o.outfall_code, p.plant_code FROM sample_batches s
+        q = """SELECT s.*, o.outfall_code, p.plant_code,
+                      (SELECT COUNT(*) FROM discharge_releases r
+                        WHERE r.sample_id=s.id AND r.status='已准排') AS release_row_count,
+                      (SELECT COUNT(*) FROM exceed_holds h
+                        WHERE h.sample_id=s.id AND h.status IN ('开放','开放挂起')) AS open_hold_count
+               FROM sample_batches s
                JOIN outfalls o ON o.id=s.outfall_id
                JOIN plants p ON p.id=o.plant_id"""
         if status:
@@ -49,6 +54,12 @@ def list_samples(authorization: AuthHeader = None, status: str | None = None):
         for r in rows:
             d = dict(r)
             d["metrics"] = json.loads(d["metrics"] or "{}")
+            formal = int(d.get("release_row_count") or 0)
+            open_holds = int(d.get("open_hold_count") or 0)
+            # 账实对齐：开放挂起与有效正式准排不得并存；“已准排”态须恰有一行。
+            d["ledger_aligned"] = (open_holds == 0 or formal == 0) and (
+                d["status"] != "已准排" or formal == 1
+            )
             items.append(d)
         return {"items": items}
 
@@ -82,6 +93,13 @@ def get_sample(sample_id: int, authorization: AuthHeader = None):
             "SELECT * FROM discharge_releases WHERE sample_id=? ORDER BY id DESC",
             (sample_id,),
         ).fetchall()
+        formal = sum(1 for r in releases if r["status"] == "已准排")
+        open_holds = sum(1 for h in holds if h["status"] in ("开放", "开放挂起"))
+        data["release_row_count"] = formal
+        data["open_hold_count"] = open_holds
+        data["ledger_aligned"] = (open_holds == 0 or formal == 0) and (
+            data["status"] != "已准排" or formal == 1
+        )
         return {
             "sample": data,
             "exceed_holds": [dict(h) for h in holds],

@@ -78,6 +78,29 @@ createApp({
     const releasableSamples = computed(() =>
       samples.value.filter((s) => s.status === "已裁定")
     );
+    // effluent-02：准排页候选保留全部未作废批，开放挂起批可见但提交键置灰，
+    // 置灰口径与超标页开放列表、后端 effluent02 闸口完全一致。
+    const releaseCandidates = computed(() =>
+      samples.value.filter((s) => s.status !== "作废")
+    );
+    const OPEN_HOLD_VALUES = ["开放", "开放挂起"];
+    const openHoldRows = computed(() =>
+      exceeds.value.filter((h) => OPEN_HOLD_VALUES.includes(h.status))
+    );
+    const openHoldSampleIds = computed(
+      () => new Set(openHoldRows.value.map((h) => h.sample_id))
+    );
+    function releaseBlocked(sampleId) {
+      if (!sampleId) return false;
+      const s = samples.value.find((x) => x.id === sampleId);
+      if (s && Number.isFinite(Number(s.open_hold_count))) {
+        return Number(s.open_hold_count) > 0;
+      }
+      return openHoldSampleIds.value.has(sampleId);
+    }
+    const selectedReleaseBlocked = computed(() =>
+      releaseBlocked(releaseForm.value.sample_id)
+    );
     const sealableSamples = computed(() =>
       samples.value.filter((s) => ["已裁定", "已准排"].includes(s.status))
     );
@@ -223,6 +246,8 @@ createApp({
       reconOne, reconAllItems, proofOne, reconCode, proofCode,
       plantForm, outfallForm, sampleForm, releaseForm, sealForm, permitForm,
       lineageForm, labForm, sludgeForm, releasableSamples, sealableSamples,
+      releaseCandidates, openHoldRows, openHoldSampleIds, releaseBlocked,
+      selectedReleaseBlocked,
       login, logout, refresh, statusClass, sampleClass, fmtMetrics,
       loadPlant, loadSample, createPlant, createOutfall, createSample,
       closeExceed, createRelease, createSeal, createPermit, createLineage,

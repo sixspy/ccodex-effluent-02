@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user, require_writer
 from db import connect, now_iso, write_audit
+from effluent02 import OPEN_HOLD_STATUSES, open_status_predicate
 from locks import release, require_lock
 from models import SealIn
 from validators import metric_summary, validate_sample_sealable
@@ -40,8 +41,8 @@ def create_seal(body: SealIn, authorization: AuthHeader = None):
                 raise HTTPException(404, "采样批次不存在")
             validate_sample_sealable(sample["status"])
             open_hold = conn.execute(
-                "SELECT id FROM exceed_holds WHERE sample_id=? AND status='开放'",
-                (body.sample_id,),
+                f"SELECT h.id FROM exceed_holds h WHERE h.sample_id=? AND {open_status_predicate('h')}",
+                (body.sample_id, *OPEN_HOLD_STATUSES),
             ).fetchone()
             if open_hold:
                 raise HTTPException(400, "开放挂起未闭，禁止封批")

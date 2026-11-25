@@ -1,7 +1,7 @@
 export const releaseViewTemplate = `
   <div class="grid-2">
     <div class="panel">
-      <h3>准排放记录</h3>
+      <h3>准排放记录（正式准排册）</h3>
       <table>
         <thead><tr><th>准排号</th><th>采样</th><th>口</th><th>值班</th><th>时间</th></tr></thead>
         <tbody>
@@ -14,11 +14,26 @@ export const releaseViewTemplate = `
     </div>
     <div class="panel">
       <h3>签发准排</h3>
-      <label>已裁定采样</label>
-      <select v-model.number="releaseForm.sample_id">
-        <option v-for="s in releasableSamples" :key="s.id" :value="s.id">{{ s.sample_code }} · {{ s.status }}</option>
+      <div v-if="openHoldRows.length" class="banner err" data-open-hold-banner>
+        超标页开放挂起 {{ openHoldRows.length }} 项未闭环：相关批次“超标未清禁准排”，选中后提交键置灰且写口拒写（effluent-02）。
+      </div>
+      <label>采样批次</label>
+      <select v-model.number="releaseForm.sample_id" data-release-sample-select>
+        <option v-for="s in releaseCandidates" :key="s.id" :value="s.id">
+          {{ s.sample_code }} · {{ s.status }}{{ releaseBlocked(s.id) ? " · ⛔ 开放超标·禁准排" : "" }}
+        </option>
       </select>
       <label>值班员</label><input v-model="releaseForm.officer"/>
-      <div class="actions"><button @click="createRelease">准排</button></div>
+      <p v-if="selectedReleaseBlocked" class="err" data-release-blocked-hint>
+        该批仍有开放超标挂起，超标未清禁准排：提交键已置灰，后端写口同样拒写，正式准排册零增行。
+      </p>
+      <div class="actions">
+        <button class="release-submit" data-release-submit
+                :disabled="selectedReleaseBlocked || !releaseForm.sample_id"
+                :class="{ 'btn-disabled': selectedReleaseBlocked }"
+                @click="createRelease">
+          {{ selectedReleaseBlocked ? "⛔ 超标未清·禁止准排" : "准排" }}
+        </button>
+      </div>
     </div>
   </div>`;

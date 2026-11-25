@@ -1,30 +1,51 @@
 """排放批争用锁。"""
 from __future__ import annotations
 
+import sqlite3
+
 from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user, require_writer
 from db import connect, now_iso, write_audit
+from effluent02 import record_contention
 
 router = APIRouter(tags=["locks"])
 
 
 def require_lock(conn, lock_key: str, holder: str) -> None:
+    """占锁；他会话持有则落“争用失败”痕并 409。
+
+    effluent-02：争用痕必须在抛错前显式提交——本函数在各服务里都位于
+    try/finally 之前，若只 INSERT 后直接 raise，外层 with connect() 会
+    rollback，争用痕就丢了（败方“无痕迹”的根因）。同时兜住并发
+    check-then-insert 的主键竞争，避免 500。
+    """
     row = conn.execute(
         "SELECT holder FROM effluent_locks WHERE lock_key=?", (lock_key,)
     ).fetchone()
     if row and row["holder"] != holder:
-        conn.execute(
-            """INSERT INTO contention_log(lock_key,actor,action,detail,created_at)
-               VALUES (?,?,?,?,?)""",
-            (lock_key, holder, "争用失败", f"持有人={row['holder']}", now_iso()),
-        )
+        record_contention(conn, lock_key, holder, f"持有人={row['holder']}")
+        conn.commit()
         raise HTTPException(409, f"锁被占用：{lock_key} 持有人 {row['holder']}")
-    if not row:
+    if row:
+        # 同持有人可重入（同一会话/用户的连续动作）。
+        return
+    try:
         conn.execute(
             "INSERT INTO effluent_locks(lock_key,holder,acquired_at) VALUES (?,?,?)",
             (lock_key, holder, now_iso()),
         )
+    except sqlite3.IntegrityError:
+        raced = conn.execute(
+            "SELECT holder FROM effluent_locks WHERE lock_key=?", (lock_key,)
+        ).fetchone()
+        if raced and raced["holder"] != holder:
+            record_contention(conn, lock_key, holder, f"并发占锁失败，持有人={raced['holder']}")
+            conn.commit()
+            raise HTTPException(
+                409, f"锁被占用：{lock_key} 持有人 {raced['holder']}"
+            )
+        # 同行已由本持有人插入：按重入处理。
 
 
 def release(conn, lock_key: str, holder: str) -> None:

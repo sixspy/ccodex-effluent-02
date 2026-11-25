@@ -1,0 +1,35 @@
+{
+  "case": "effluent-02",
+  "slot": "排污乙第2槽",
+  "incident": "开放挂起仍硬准排：超标未闭环而正式准排册已落已准排行，对账卡片误标已准排",
+  "ruling": "超标未清禁准排（甲路径，2026-11-25 当日封存）",
+  "outfall_code": "OF-E1-A",
+  "permit_code": "DP-2026-E01",
+  "sample": {
+    "sample_code": "SM-B17",
+    "metrics": {"cod": 88.0, "nh3n": 8.8, "tp": 0.88},
+    "flow_m3h": 120.0,
+    "status": "已准排"
+  },
+  "open_exceed_hold": {
+    "hold_key": "EX-SM-B17-COD-E02",
+    "exceed_metric": "COD",
+    "measured": 88.0,
+    "limit_value": 50.0,
+    "status": "开放"
+  },
+  "hard_formal_release": {
+    "release_ref": "RL-SM-B17-HARD",
+    "status": "已准排",
+    "officer": "硬准排（事故）"
+  },
+  "expected_under_fix": {
+    "write_mouth": "POST /api/releases -> 400 仍有开放超标挂起，禁止准排（或强准排记超标禁准偏航）",
+    "formal_ledger_growth": 0,
+    "proof_released": false,
+    "reconcile_release_ready": false,
+    "reconcile_complete_lamp": "红",
+    "release_page_submit": "disabled",
+    "rectify_endpoint": "POST /api/reconcile/rectify-open-hold-releases"
+  }
+}

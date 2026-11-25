@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
-DB_PATH = DATA / "app.db"
+# effluent-02：并发脚本/本机复现可用 EFFLUENT_DB 指向临时事故库，不碰演示库。
+DB_PATH = Path(os.environ.get("EFFLUENT_DB", str(DATA / "app.db")))
 FIXTURES = ROOT / "fixtures"
 FRONTEND = ROOT / "frontend"
 
@@ -128,6 +130,19 @@ CREATE TABLE IF NOT EXISTS discharge_releases(
   FOREIGN KEY(sample_id) REFERENCES sample_batches(id),
   FOREIGN KEY(outfall_id) REFERENCES outfalls(id)
 );
+-- effluent-02 乙路径：准排意图先登记影子草稿，未原子升正前不是正式准排行。
+CREATE TABLE IF NOT EXISTS release_intents(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sample_id INTEGER NOT NULL,
+  intent_ref TEXT NOT NULL,
+  officer TEXT NOT NULL,
+  status TEXT NOT NULL,
+  promoted_release_id INTEGER,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT,
+  FOREIGN KEY(sample_id) REFERENCES sample_batches(id)
+);
 CREATE TABLE IF NOT EXISTS discharge_seals(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   sample_id INTEGER NOT NULL,
@@ -186,6 +201,12 @@ CREATE TABLE IF NOT EXISTS sludge_plan_jobs(
   detail TEXT,
   created_at TEXT NOT NULL
 );
+-- effluent-02 跨表闸兜底：同一采样批至多一张有效（已准排）正式行。
+-- 作废/偏航行不占唯一位，可留痕多张。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_release_formal_valid
+  ON discharge_releases(sample_id) WHERE status='已准排';
+CREATE INDEX IF NOT EXISTS idx_release_intents_sample
+  ON release_intents(sample_id);
 """
 
 
@@ -462,7 +483,7 @@ def dashboard_stats(conn: sqlite3.Connection) -> dict:
     outfalls = conn.execute("SELECT COUNT(*) c FROM outfalls").fetchone()["c"]
     samples = conn.execute("SELECT COUNT(*) c FROM sample_batches").fetchone()["c"]
     open_holds = conn.execute(
-        "SELECT COUNT(*) c FROM exceed_holds WHERE status='开放'"
+        "SELECT COUNT(*) c FROM exceed_holds WHERE status IN ('开放','开放挂起')"
     ).fetchone()["c"]
     released = conn.execute(
         "SELECT COUNT(*) c FROM discharge_releases WHERE status='已准排'"

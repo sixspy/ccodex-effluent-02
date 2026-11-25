@@ -198,3 +198,14 @@ pre {
   max-height: 280px;
   overflow: auto;
 }
+
+/* effluent-02 超标未清禁准排：置灰提交键（不仅靠图标，disabled + 文案 + 后端拒写） */
+button.release-submit:disabled,
+button.release-submit.btn-disabled {
+  background: #b9c2bf;
+  border-color: #b9c2bf;
+  color: #f3f6f5;
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+button.release-submit:disabled:hover { filter: none; }

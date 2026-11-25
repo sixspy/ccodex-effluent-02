@@ -1,0 +1,12 @@
+{
+  "artifact": "docs/effluent-02-超标禁准裁决.md",
+  "ruling": "超标未清禁准排（甲路径）",
+  "slot": "排污乙第2槽",
+  "incident_sample": "SM-B17",
+  "sealed_date": "2026-11-25",
+  "sealed_at": "2026-11-25T00:00:00+08:00",
+  "status": "已封存",
+  "sha256": "68168c71b4e9bcbf437b76ba175f69d5891fd88bfc03a0c5a5c22a29106af44e",
+  "bytes": 3926,
+  "separation": "争用入 contention_log；取舍/偏航入 audit_trail；分写不混"
+}

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user, require_writer
 from db import connect, now_iso, write_audit
+from effluent02 import OPEN_HOLD_STATUSES, open_hold_count, open_status_predicate
 from locks import release, require_lock
 from models import ExceedCloseIn, ExceedOpenIn
 
@@ -19,12 +20,38 @@ def list_exceeds(authorization: AuthHeader = None, status: str | None = None):
                JOIN sample_batches s ON s.id=h.sample_id
                JOIN outfalls o ON o.id=s.outfall_id"""
         if status:
-            rows = conn.execute(
-                q + " WHERE h.status=? ORDER BY h.id DESC", (status,)
-            ).fetchall()
+            if status in OPEN_HOLD_STATUSES or status == "开放":
+                # “开放”视图统一容纳‘开放’与全称‘开放挂起’，与总览计数同口径。
+                rows = conn.execute(
+                    q + f" WHERE {open_status_predicate('h')} ORDER BY h.id DESC",
+                    (*OPEN_HOLD_STATUSES,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    q + " WHERE h.status=? ORDER BY h.id DESC", (status,)
+                ).fetchall()
         else:
             rows = conn.execute(q + " ORDER BY h.id DESC").fetchall()
         return {"items": [dict(r) for r in rows]}
+
+
+@router.get("/api/exceeds/open")
+def list_open_exceeds(authorization: AuthHeader = None):
+    """开放未闭环挂起便捷口：返回行与去重 sample_ids，供准排页置灰/总览核对。"""
+    require_user(authorization)
+    with connect() as conn:
+        rows = conn.execute(
+            f"""SELECT h.*, s.sample_code FROM exceed_holds h
+                JOIN sample_batches s ON s.id=h.sample_id
+                WHERE {open_status_predicate('h')} ORDER BY h.id DESC""",
+            (*OPEN_HOLD_STATUSES,),
+        ).fetchall()
+        items = [dict(r) for r in rows]
+        return {
+            "items": items,
+            "count": len(items),
+            "sample_ids": sorted({int(r["sample_id"]) for r in rows}),
+        }
 
 
 @router.post("/api/exceeds/open")
@@ -45,8 +72,8 @@ def open_exceed(body: ExceedOpenIn, authorization: AuthHeader = None):
             if sample["status"] == "作废":
                 raise HTTPException(400, "已作废不可挂起")
             open_row = conn.execute(
-                "SELECT id FROM exceed_holds WHERE sample_id=? AND status='开放'",
-                (body.sample_id,),
+                f"SELECT h.id FROM exceed_holds h WHERE h.sample_id=? AND {open_status_predicate('h')}",
+                (body.sample_id, *OPEN_HOLD_STATUSES),
             ).fetchone()
             if open_row:
                 raise HTTPException(400, "已有开放挂起")
@@ -107,7 +134,7 @@ def close_exceed(body: ExceedCloseIn, authorization: AuthHeader = None):
         ).fetchone()
         if not hold:
             raise HTTPException(404, "挂起不存在")
-        if hold["status"] != "开放":
+        if hold["status"] not in OPEN_HOLD_STATUSES:
             raise HTTPException(400, "挂起已关闭")
         lock_key = f"sample:{hold['sample_id']}"
         require_lock(conn, lock_key, user)
@@ -117,11 +144,20 @@ def close_exceed(body: ExceedCloseIn, authorization: AuthHeader = None):
                    WHERE id=?""",
                 (now_iso(), body.note or hold["note"], body.hold_id),
             )
-            conn.execute(
-                """UPDATE sample_batches SET status='已裁定', adjudicated_at=?
-                   WHERE id=?""",
-                (now_iso(), hold["sample_id"]),
-            )
+            # 若还有别的开放挂起未闭环，批态必须留在“旁路挂起”，
+            # 不能因关掉其中一张就提前“已裁定”，否则五页状态会混。
+            remaining = open_hold_count(conn, hold["sample_id"])
+            if remaining > 0:
+                conn.execute(
+                    "UPDATE sample_batches SET status='旁路挂起' WHERE id=?",
+                    (hold["sample_id"],),
+                )
+            else:
+                conn.execute(
+                    """UPDATE sample_batches SET status='已裁定', adjudicated_at=?
+                       WHERE id=?""",
+                    (now_iso(), hold["sample_id"]),
+                )
             sample = conn.execute(
                 "SELECT sample_code FROM sample_batches WHERE id=?",
                 (hold["sample_id"],),
